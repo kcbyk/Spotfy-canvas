@@ -85,11 +85,16 @@ app.use((err, _req, res, _next) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🟢 Spotify Canvas API running at http://localhost:${PORT}`);
-  console.log(`   Canvas endpoint:    GET /api/canvas/:trackId`);
-  console.log(`   Health check:       GET /api/health`);
-  console.log(`   Frontend UI:        GET /`);
-  console.log(`   sp_dc configured:   ${process.env.SPOTIFY_SP_DC ? 'Yes' : 'No (using public client-token fallback)'}\n`);
+  console.log(`\n🟢 Spotify Canvas API running on port ${PORT}`);
+  console.log(`   URL:                 http://localhost:${PORT}`);
+  console.log(`   Canvas endpoint:     GET /api/canvas/:trackId`);
+  console.log(`   Health check:        GET /api/health`);
+  console.log(`   Frontend UI:         GET /`);
+  console.log(`   Auth methods:`, {
+    oauth_refresh_token: Boolean(process.env.SPOTIFY_REFRESH_TOKEN),
+    sp_dc_cookie: Boolean(process.env.SPOTIFY_SP_DC),
+    https_proxy: Boolean(process.env.HTTPS_PROXY || process.env.HTTP_PROXY)
+  }, '\n');
 });
 
 export default app;
