@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: spotify-canvas
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SPOTIFY_CLIENT_ID
+        sync: false # set in Render dashboard
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: SPOTIFY_REFRESH_TOKEN
+        sync: false
+      - key: SPOTIFY_SP_DC
+        sync: false
+    healthCheckPath: /api/health
+    autoDeploy: true
