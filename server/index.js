@@ -17,20 +17,27 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // --- Security & middlewares ---
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      mediaSrc: ["'self'", "*.scdn.co", "*.spotifycdn.com", "*.spotify.com", "blob:", "data:"],
-      imgSrc: ["'self'", "*.scdn.co", "*.spotifycdn.com", "i.scdn.co", "data:", "blob:"],
-      connectSrc: ["'self'", "*.spotify.com", "canvaz-cache.spotify.com", "www.youtube.com", "i.ytimg.com"],
-      frameSrc: ["'self'", "www.youtube.com", "youtube.com", "www.youtube-nocookie.com"],
-      scriptSrc: ["'self'", "https://www.youtube.com", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      fontSrc: ["'self'", "data:"],
-    }
-  },
+  contentSecurityPolicy: false, // We manage CSP via a simpler custom header to avoid over-blocking on mobile
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
+
+// Permissive CSP for canvas video from Spotify CDN + YouTube iframe
+app.use((_req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "media-src 'self' blob: data: *.scdn.co *.spotifycdn.com *.spotify.com",
+      "img-src 'self' data: blob: *.scdn.co *.spotifycdn.com i.scdn.co",
+      "connect-src 'self' *.spotify.com accounts.spotify.com api.spotify.com canvaz-cache.spotify.com spclient.wg.spotify.com api-partner.spotify.com",
+      "frame-src 'self' www.youtube.com youtube.com www.youtube-nocookie.com",
+      "script-src 'self' www.youtube.com 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
+      "font-src 'self' data: fonts.gstatic.com"
+    ].join('; ')
+  );
+  next();
+});
 
 app.use(cors({
   origin: NODE_ENV === 'production' ? process.env.ALLOWED_ORIGIN?.split(',') || true : true,
@@ -54,7 +61,11 @@ app.use('/api/canvas', apiLimiter, canvasRouter);
 
 // Quick health check
 app.get('/api/health', (_req, res) => {
-  res.json({
+  res.set({
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff'
+  });
+  res.status(200).json({
     status: 'ok',
     service: 'spotify-canvas-api',
     auth: {
@@ -62,6 +73,8 @@ app.get('/api/health', (_req, res) => {
       sp_dc_cookie: Boolean(process.env.SPOTIFY_SP_DC),
       https_proxy: Boolean(process.env.HTTPS_PROXY || process.env.HTTP_PROXY)
     },
+    port: PORT,
+    uptime_sec: Math.floor(process.uptime()),
     recommended_for_datacenters: 'Use SPOTIFY_CLIENT_ID + SPOTIFY_CLIENT_SECRET + SPOTIFY_REFRESH_TOKEN (accounts.spotify.com is NOT blocked).',
     timestamp: new Date().toISOString()
   });
@@ -84,7 +97,11 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+// Handle unhandled errors so Render sees us alive
+process.on('uncaughtException', (err) => console.error('[uncaughtException]', err));
+process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err));
+
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🟢 Spotify Canvas API running on port ${PORT}`);
   console.log(`   URL:                 http://localhost:${PORT}`);
   console.log(`   Canvas endpoint:     GET /api/canvas/:trackId`);
