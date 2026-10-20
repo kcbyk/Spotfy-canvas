@@ -93,6 +93,38 @@ olarak hot-reload** edilir (restart gerekmez).
 
 ---
 
+## 🤖 Otomatik Toplu Scraper
+
+`scripts/bulk-canvas-scraper.mjs` ile Spotify çalma listelerindeki binlerce şarkının Canvas'ını
+tek seferde toplayabilirsin. **Lokal bilgisayarında çalıştır** (residential IP → WAF engeli yemez).
+
+### Kurulum
+```bash
+npm install
+# .env dosyasına SPOTIFY_SP_DC= değerini yaz (open.spotify.com çerezinden)
+```
+
+### Çalıştırma
+```bash
+# Varsayılan playlistler (Top 50 Global/TR, Viral 50, Today's Top Hits, Pop Rising)
+npm run scrape
+
+# Spesifik playlist URL/ID'leri ile
+node scripts/bulk-canvas-scraper.mjs https://open.spotify.com/playlist/37i9dQZEVXbMDoHDwVN2tF
+node scripts/bulk-canvas-scraper.mjs 37i9dQZEVXbMDoHDwVN2tF 37i9dQZEVXbIVYVBNw9D5K
+```
+
+### Özellikler
+- Zaten veritabanında olanları atlar (duplication koruması)
+- Her istek arası **500-1000ms rastgele bekleme** (rate-limit koruması)
+- 429 yerse `Retry-After` header'ını okuyarak otomatik bekler
+- Her canvas bulunduğunda **anlık atomic save** (çökme anında progress kaybolmaz)
+- Token 401 verirse otomatik yenileyip tekrar dener
+- Renkli konsol logları: `[SUCCESS]`, `[SKIP]`, `[NO_CANVAS]`, `[PROGRESS]`
+- 3 farklı canvaz-cache hostunu sırayla dener
+
+---
+
 ## 🚀 Render Deploy
 
 Bu sürümde Spotify OAuth, `sp_dc` cookie, Premium abonelik veya residential proxy
