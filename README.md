@@ -181,3 +181,22 @@ buton ile her an video ↔ plak arasında geçiş yapabilirsin.
 - `node scripts/meta-fast.mjs` kworb.net günlük chart'larından ~18.000 track toplar, Spotify oEmbed ile kapak çeker ve canvas-database.json ile birleştirir.
 - Datacenter IP'lerden Spotify WAF (Fastly 54113) engelli olduğu için canvas fetch'i anonim token ile çalışmıyor; canvas URL'leri için ya SP_DC cookie gerekli ya da topluluk/PR ile canvas-database.json güncellenmeli.
 - Canvas olmayan şarkılarda YouTube fallback otomatik devreye girer (ön kapakta gradient placeholder + YouTube arama).
+
+## 🔑 API Key Koruması
+
+Sunucu `API_KEY` environment variable'ı ayarlanmışsa tüm `/api/*` endpoint'leri anahtar gerektirir (`/api/health` hariç). Anahtar iki yoldan gönderilebilir:
+
+```bash
+# 1) Header ile (önerilen)
+curl -H "X-API-Key: <key>" https://spotify-canvas.onrender.com/api/canvas/tracks
+
+# 2) Query parametresi ile
+curl "https://spotify-canvas.onrender.com/api/canvas/<trackId>?api_key=<key>"
+```
+
+Yeni key üretmek:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+Yerel geliştirme için `.env` dosyasına `API_KEY=...` yazın. Render'da Environment Variables bölümüne ekleyin. Frontend (kendi host'undan gelen tarayıcı istekleri) key gerekmeden çalışır.

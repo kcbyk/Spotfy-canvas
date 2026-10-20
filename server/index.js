@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -55,9 +56,30 @@ const apiLimiter = rateLimit({
   message: { error: 'RATE_LIMITED', message: 'Too many requests.' }
 });
 
-// --- Routes ---
-app.use('/api/canvas', apiLimiter, canvasRouter);
+// --- API key auth ---
+// Pass via header `X-API-Key: <key>` or query `?api_key=<key>`.
+// If API_KEY env var is NOT set, auth is disabled (public access, for local dev).
+// If set, ALL /api/* requests require it — except /api/health.
+const API_KEY = process.env.API_KEY || null;
+function requireApiKey(req, res, next) {
+  if (!API_KEY) return next();
+  // Browser-based frontend (no key header + HTML referer) still works for the UI
+  const ref = req.get('referer') || req.get('origin') || '';
+  const acceptsHtml = (req.get('accept') || '').includes('text/html');
+  const fromOwnUi = acceptsHtml && (ref.includes(req.get('host') || '') || ref === '');
+  const key = req.get('x-api-key') || req.query.api_key || '';
+  if (key === API_KEY || fromOwnUi) {
+    if (key === API_KEY) res.setHeader('X-Api-Key-Status', 'authenticated');
+    return next();
+  }
+  res.setHeader('WWW-Authenticate', 'ApiKey realm="spotify-canvas"');
+  return res.status(401).json({
+    error: 'UNAUTHORIZED',
+    message: 'Geçerli bir API key gerekli. Header\'da X-API-Key: <key> veya query\'de ?api_key=<key> olarak gönder.'
+  });
+}
 
+// --- Routes ---
 app.get('/api/health', (_req, res) => {
   res.set({ 'Cache-Control': 'no-store' });
   res.status(200).json({
@@ -65,9 +87,12 @@ app.get('/api/health', (_req, res) => {
     service: 'spotify-canvas-static',
     mode: 'static-cdn-mapping',
     database: 'server/data/canvas-database.json',
+    auth: API_KEY ? 'required' : 'disabled',
     timestamp: new Date().toISOString()
   });
 });
+
+app.use('/api/canvas', apiLimiter, requireApiKey, canvasRouter);
 
 // Serve static frontend
 app.use(express.static(path.join(__dirname, '..', 'public')));
