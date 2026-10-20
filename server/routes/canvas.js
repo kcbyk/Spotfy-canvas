@@ -90,7 +90,7 @@ router.get('/:trackId', (req, res) => {
     canvasUrl: null,
     fallbackToYoutube: true,
     meta,
-    reason: 'TRACK_NOT_IN_DATABASE'
+    reason: meta ? 'NO_CANVAS_AVAILABLE' : 'TRACK_NOT_IN_DATABASE'
   });
 });
 
