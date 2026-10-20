@@ -8,6 +8,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: API_KEY
+        sync: false # set in Render dashboard — shared with client apps
       - key: SPOTIFY_CLIENT_ID
         sync: false # set in Render dashboard
       - key: SPOTIFY_CLIENT_SECRET
