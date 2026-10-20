@@ -1,7 +1,5 @@
 /* ===========================================================
-   Spotify Canvas — Now Playing Client
-   Handles: Canvas fetch, video playback, YouTube fallback,
-            cover toggle, progress, play/pause
+   Spotify Canvas — Now Playing Client (Static CDN Mapping mode)
    =========================================================== */
 
 (() => {
@@ -41,28 +39,20 @@
   const state = {
     trackId: null,
     canvasUrl: null,
-    mode: 'canvas',   // 'canvas' | 'cover'
+    meta: null,          // { title, artist, cover, ytQuery }
+    mode: 'canvas',
     youtubeActive: false,
     isPlaying: false,
     isLiked: false,
-    // Faux-progress state (since we are not playing actual audio)
-    duration: 218000, // ms
+    duration: 218000,
     progress: 0,
     progressTimer: null,
-    trackMeta: null,
+    catalog: []          // loaded from /api/canvas/tracks
   };
 
-  // --- Demo track catalog (used to display info without requiring Spotify API metadata) ---
-  const DEMO_TRACKS = {
-    '3OHfY25tqY28d16oZczHc8': { title: 'Kill Bill',        artist: 'SZA',            cover: 'https://i.scdn.co/image/ab67616d0000b2736bcd89aae9a00d557b7e843f', ytQuery: 'SZA Kill Bill Official Audio' },
-    '4cOdK2wGLETKBW3PvgPWqT': { title: 'Blinding Lights',  artist: 'The Weeknd',     cover: 'https://i.scdn.co/image/ab67616d0000b2738863bc11d2aa12b54f5aeb43', ytQuery: 'The Weeknd Blinding Lights Official Video' },
-    '0VjIjW4GlUZAMYd2vXMi3b': { title: 'Shape of You',     artist: 'Ed Sheeran',     cover: 'https://i.scdn.co/image/ab67616d0000b273ba5db46f4b838ef6027e6f96', ytQuery: 'Ed Sheeran Shape of You' },
-    DEFAULT: { title: 'Unknown Track', artist: 'Spotify Canvas', cover: '', ytQuery: null }
-  };
-
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
   // TOAST
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
   let toastTimer = null;
   function showToast(msg, ms = 2200) {
     toast.textContent = msg;
@@ -71,9 +61,20 @@
     toastTimer = setTimeout(() => toast.classList.remove('show'), ms);
   }
 
-  // ----------------------------------------------------------------
-  // API: Fetch canvas from backend
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
+  // API
+  // ----------------------------------------------------------
+  async function fetchCatalog() {
+    try {
+      const res = await fetch('/api/canvas/tracks');
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.tracks || [];
+    } catch {
+      return [];
+    }
+  }
+
   async function fetchCanvas(trackId) {
     const res = await fetch(`/api/canvas/${encodeURIComponent(trackId)}`);
     if (!res.ok) {
@@ -83,30 +84,29 @@
     return res.json();
   }
 
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
   // Layer management
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
   function setMode(mode) {
     state.mode = mode;
     phone.classList.remove('canvas-mode', 'cover-mode', 'youtube-mode');
     if (state.youtubeActive) {
       phone.classList.add('youtube-mode');
       youtubeLayer.classList.add('active');
+      coverLayer.classList.remove('active');
     } else {
       youtubeLayer.classList.remove('active');
+      coverLayer.classList.toggle('active', mode === 'cover');
       phone.classList.add(mode === 'cover' ? 'cover-mode' : 'canvas-mode');
     }
-    coverLayer.classList.toggle('active', mode === 'cover' && !state.youtubeActive);
     toggleText.textContent = mode === 'cover' ? 'Plak' : 'Canvas';
   }
 
-  function showLoading(show) {
-    canvasLoading.classList.toggle('show', show);
-  }
+  function showLoading(show) { canvasLoading.classList.toggle('show', show); }
 
-  // ----------------------------------------------------------------
-  // Canvas video handling
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
+  // Canvas video
+  // ----------------------------------------------------------
   function loadCanvasVideo(url) {
     state.youtubeActive = false;
     youtubeLayer.classList.remove('active');
@@ -116,17 +116,8 @@
       canvasVideo.src = url;
       canvasVideo.load();
 
-      const onCanPlay = () => {
-        cleanup();
-        showLoading(false);
-        setMode(state.mode);
-        if (state.isPlaying) canvasVideo.play().catch(()=>{});
-        resolve();
-      };
-      const onError = () => {
-        cleanup();
-        reject(new Error('VIDEO_LOAD_ERROR'));
-      };
+      const onCanPlay = () => { cleanup(); showLoading(false); setMode(state.mode); if (state.isPlaying) canvasVideo.play().catch(()=>{}); resolve(); };
+      const onError   = () => { cleanup(); reject(new Error('VIDEO_LOAD_ERROR')); };
       const cleanup = () => {
         canvasVideo.removeEventListener('canplay', onCanPlay);
         canvasVideo.removeEventListener('error', onError);
@@ -136,43 +127,35 @@
     });
   }
 
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
   // YouTube fallback
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
   function loadYoutubeFallback(query) {
     state.youtubeActive = true;
     coverLayer.classList.remove('active');
     youtubeLayer.classList.add('active');
     phone.classList.add('youtube-mode');
-    phone.classList.remove('canvas-mode', 'cover-mode');
+    phone.classList.remove('canvas-mode','cover-mode');
 
-    const q = encodeURIComponent(query || `${state.trackMeta?.title || 'music'} ${state.trackMeta?.artist || ''}`);
-    // YouTube embed with search-list, autoplay, muted (for autoplay policy), loop, no controls
+    const q = encodeURIComponent(query || `${state.meta?.title || 'music'} ${state.meta?.artist || ''}`);
     const iframe = document.createElement('iframe');
-    iframe.src = `https://www.youtube.com/embed?listType=search&list=${q}&autoplay=1&mute=1&loop=1&controls=0&modestbranding=1&playsinline=1&rel=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=0`;
+    iframe.src = `https://www.youtube.com/embed?listType=search&list=${q}&autoplay=1&mute=1&loop=1&controls=0&modestbranding=1&playsinline=1&rel=0&showinfo=0&iv_load_policy=3&disablekb=1`;
     iframe.allow = 'autoplay; encrypted-media; fullscreen';
-    iframe.setAttribute('loading', 'eager');
     iframe.referrerPolicy = 'no-referrer';
     youtubeWrapper.innerHTML = '';
     youtubeWrapper.appendChild(iframe);
 
-    showToast('Canvas bulunamadı · YouTube fallback aktif');
+    showToast('Canvas veritabanında yok · YouTube fallback aktif');
   }
 
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
   // Cover art
-  // ----------------------------------------------------------------
-  function loadCoverArt(coverUrl) {
-    if (coverUrl) {
-      coverArt.src = coverUrl;
-    } else {
-      // Generate a colorful gradient placeholder
-      coverArt.src = generateGradientDataUrl(state.trackId || 'spotify');
-    }
+  // ----------------------------------------------------------
+  function loadCoverArt(coverUrl, seedForFallback) {
+    coverArt.src = coverUrl || generateGradientDataUrl(seedForFallback || state.trackId || 'spotify');
   }
 
   function generateGradientDataUrl(seed) {
-    // Deterministic gradient from seed
     let hash = 0;
     for (let i = 0; i < seed.length; i++) hash = ((hash << 5) - hash) + seed.charCodeAt(i), hash |= 0;
     const hue1 = Math.abs(hash % 360);
@@ -181,90 +164,84 @@
     return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
   }
 
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
   // Main load flow
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
   async function loadTrack(trackId) {
     if (!trackId || !/^[0-9A-Za-z]{22}$/.test(trackId)) {
-      showToast('Geçersiz Track ID (22 karakter olmalı)');
+      showToast('Geçersiz Track ID (22 karakter)');
       return;
     }
 
     state.trackId = trackId;
-    state.trackMeta = DEMO_TRACKS[trackId] || DEMO_TRACKS.DEFAULT;
     state.progress = 0;
     state.isPlaying = false;
     updatePlayButton();
+    showLoading(true);
+    canvasVideo.style.opacity = '0';
+    apiInfo.textContent = 'Yükleniyor…';
 
-    trackTitle.textContent = state.trackMeta.title;
-    trackArtist.textContent = state.trackMeta.artist;
-    loadCoverArt(state.trackMeta.cover);
+    let result;
+    try {
+      result = await fetchCanvas(trackId);
+    } catch (err) {
+      console.error(err);
+      showToast('API hatası');
+      result = { success: false, canvasUrl: null, fallbackToYoutube: true, meta: null };
+    }
+
+    state.canvasUrl = result.canvasUrl;
+    state.meta = result.meta || { title: 'Unknown Track', artist: 'Spotify Canvas', cover: null };
+
+    trackTitle.textContent = state.meta.title;
+    trackArtist.textContent = state.meta.artist;
+    loadCoverArt(state.meta.cover);
     totalTimeEl.textContent = formatTime(state.duration);
     currentTimeEl.textContent = formatTime(0);
     progressFill.style.width = '0%';
     progressThumb.style.left = '0%';
 
-    showLoading(true);
-    canvasVideo.style.opacity = '0';
-    apiInfo.textContent = 'Canvas yükleniyor…';
-
-    let result;
-    try {
-      result = await fetchCanvas(trackId);
-      apiInfo.textContent = result.canvasUrl ? '✓ Canvas' : '✗ Canvas yok';
-    } catch (err) {
-      console.error('Canvas fetch error:', err);
-      showToast('Canvas alınamadı, YouTube\'a geçiliyor');
-      apiInfo.textContent = '✗ Hata';
-      result = { canvasUrl: null, fallbackToYoutube: true };
-    }
-
     if (result.canvasUrl) {
-      state.canvasUrl = result.canvasUrl;
       try {
         await loadCanvasVideo(result.canvasUrl);
         canvasVideo.style.opacity = '1';
         setMode('canvas');
         showToast('Canvas yüklendi');
+        apiInfo.textContent = '✓ Canvas';
       } catch (e) {
-        console.warn('Canvas video load failed, falling back to YouTube:', e);
-        loadYoutubeFallback(state.trackMeta.ytQuery);
+        console.warn('Video load failed -> youtube:', e);
+        loadYoutubeFallback(state.meta.ytQuery);
+        setMode('canvas');
+        apiInfo.textContent = '⚠ Video hatası → YouTube';
       }
     } else {
-      state.canvasUrl = null;
-      // Canvas yok — YouTube fallback
-      loadYoutubeFallback(state.trackMeta.ytQuery || `${state.trackMeta.title} ${state.trackMeta.artist}`);
-      // Also set mode to 'canvas' so the toggle still flips between cover and (youtube-as-canvas)
+      loadYoutubeFallback(state.meta.ytQuery || `${state.meta.title} ${state.meta.artist}`);
       setMode('canvas');
+      apiInfo.textContent = '✗ DB\'de yok → YouTube';
     }
 
     showLoading(false);
   }
 
-  // ----------------------------------------------------------------
-  // Play/Pause (faux audio, but controls canvas video)
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
+  // Play/Pause & progress
+  // ----------------------------------------------------------
   function togglePlay() {
     state.isPlaying = !state.isPlaying;
     updatePlayButton();
     phone.classList.toggle('playing', state.isPlaying);
-
     if (state.isPlaying) {
-      if (!state.youtubeActive && canvasVideo.src) {
-        canvasVideo.play().catch(()=>{});
-      }
+      if (!state.youtubeActive && canvasVideo.src) canvasVideo.play().catch(()=>{});
       startProgressTimer();
     } else {
       if (!state.youtubeActive) canvasVideo.pause();
       stopProgressTimer();
     }
   }
-
   function updatePlayButton() {
     playIcon.style.display = state.isPlaying ? 'none' : 'block';
     pauseIcon.style.display = state.isPlaying ? 'block' : 'none';
   }
-
   function startProgressTimer() {
     stopProgressTimer();
     state.progressTimer = setInterval(() => {
@@ -274,10 +251,7 @@
     }, 200);
   }
   function stopProgressTimer() {
-    if (state.progressTimer) {
-      clearInterval(state.progressTimer);
-      state.progressTimer = null;
-    }
+    if (state.progressTimer) { clearInterval(state.progressTimer); state.progressTimer = null; }
   }
   function updateProgress() {
     const pct = (state.progress / state.duration) * 100;
@@ -287,87 +261,61 @@
   }
   function formatTime(ms) {
     const total = Math.floor(ms / 1000);
-    const m = Math.floor(total / 60);
-    const s = total % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
+    return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`;
   }
 
-  // ----------------------------------------------------------------
-  // Progress bar seeking
-  // ----------------------------------------------------------------
   progressBar.addEventListener('click', (e) => {
     const rect = progressBar.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    state.progress = pct * state.duration;
+    state.progress = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * state.duration;
     updateProgress();
   });
 
-  // ----------------------------------------------------------------
-  // Toggle canvas / cover
-  // ----------------------------------------------------------------
-  toggleBtn.addEventListener('click', () => {
-    setMode(state.mode === 'canvas' ? 'cover' : 'canvas');
-  });
-
-  // ----------------------------------------------------------------
-  // Play button
-  // ----------------------------------------------------------------
+  // ----------------------------------------------------------
+  // Wire up controls
+  // ----------------------------------------------------------
+  toggleBtn.addEventListener('click', () => setMode(state.mode === 'canvas' ? 'cover' : 'canvas'));
   playBtn.addEventListener('click', togglePlay);
 
-  // ----------------------------------------------------------------
-  // Heart toggle
-  // ----------------------------------------------------------------
   heartBtn.addEventListener('click', () => {
     state.isLiked = !state.isLiked;
     heartBtn.classList.toggle('liked', state.isLiked);
-    if (state.isLiked) {
-      heartBtn.innerHTML = '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
-      showToast('Favorilere eklendi');
-    } else {
-      heartBtn.innerHTML = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
-    }
+    heartBtn.innerHTML = state.isLiked
+      ? '<svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+    showToast(state.isLiked ? 'Favorilere eklendi' : 'Favorilerden çıkarıldı');
   });
 
-  // ----------------------------------------------------------------
-  // Track switching (demo bar)
-  // ----------------------------------------------------------------
-  loadBtn.addEventListener('click', () => {
-    loadTrack(trackInput.value.trim());
-  });
-  trackInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') loadTrack(trackInput.value.trim());
-  });
+  loadBtn.addEventListener('click', () => loadTrack(trackInput.value.trim()));
+  trackInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadTrack(trackInput.value.trim()); });
   presetSelect.addEventListener('change', () => {
     trackInput.value = presetSelect.value;
     loadTrack(presetSelect.value);
   });
+  canvasLayer.addEventListener('click', (e) => { if (e.target === canvasVideo) togglePlay(); });
+  canvasVideo.addEventListener('ended', () => { canvasVideo.currentTime = 0; canvasVideo.play().catch(()=>{}); });
 
-  // ----------------------------------------------------------------
-  // Canvas video loop & sync with play state
-  // ----------------------------------------------------------------
-  canvasVideo.addEventListener('play', () => {
-    // Keep canvas looping (already has loop attr but belt+suspenders)
-  });
-  canvasVideo.addEventListener('ended', () => {
-    canvasVideo.currentTime = 0;
-    canvasVideo.play().catch(()=>{});
-  });
-  // Prevent canvas video from controlling overall state (muted, loops)
-  canvasVideo.addEventListener('click', () => { /* let clicks pass through to UI */ });
+  // ----------------------------------------------------------
+  // Init: load catalog, populate dropdown, play a random track
+  // ----------------------------------------------------------
+  async function init() {
+    setMode('canvas');
+    loadCoverArt(null);
+    state.catalog = await fetchCatalog();
 
-  // Tap on canvas layer toggles play/pause (Spotify-like behavior)
-  canvasLayer.addEventListener('click', (e) => {
-    // Only toggle if click is on the video itself (not on overlay buttons)
-    if (e.target === canvasVideo) {
-      togglePlay();
+    // Populate preset dropdown from catalog
+    if (state.catalog.length) {
+      presetSelect.innerHTML = state.catalog
+        .map(t => `<option value="${t.id}">${t.artist} — ${t.title}${t.hasCanvas ? ' ✓' : ''}</option>`)
+        .join('');
     }
-  });
 
-  // ----------------------------------------------------------------
-  // Initialize
-  // ----------------------------------------------------------------
-  setMode('canvas');
-  loadCoverArt(null); // placeholder until track loads
-  loadTrack(trackInput.value.trim() || '3OHfY25tqY28d16oZczHc8');
+    // Try to pick a known-with-canvas track
+    const withCanvas = state.catalog.filter(t => t.hasCanvas);
+    const first = withCanvas[0] || state.catalog[0] || { id: '3OHfY25tqY28d16oZczHc8' };
+    trackInput.value = first.id;
+    presetSelect.value = first.id;
+    loadTrack(first.id);
+  }
 
+  init();
 })();

@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -15,13 +14,17 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
+// Handle unhandled errors so Render sees us alive
+process.on('uncaughtException', (err) => console.error('[uncaughtException]', err));
+process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err));
+
 // --- Security & middlewares ---
 app.use(helmet({
-  contentSecurityPolicy: false, // We manage CSP via a simpler custom header to avoid over-blocking on mobile
+  contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 
-// Permissive CSP for canvas video from Spotify CDN + YouTube iframe
+// Video/CDN CSP
 app.use((_req, res, next) => {
   res.setHeader(
     'Content-Security-Policy',
@@ -29,7 +32,7 @@ app.use((_req, res, next) => {
       "default-src 'self'",
       "media-src 'self' blob: data: *.scdn.co *.spotifycdn.com *.spotify.com",
       "img-src 'self' data: blob: *.scdn.co *.spotifycdn.com i.scdn.co",
-      "connect-src 'self' *.spotify.com accounts.spotify.com api.spotify.com canvaz-cache.spotify.com spclient.wg.spotify.com api-partner.spotify.com",
+      "connect-src 'self'",
       "frame-src 'self' www.youtube.com youtube.com www.youtube-nocookie.com",
       "script-src 'self' www.youtube.com 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
@@ -39,56 +42,40 @@ app.use((_req, res, next) => {
   next();
 });
 
-app.use(cors({
-  origin: NODE_ENV === 'production' ? process.env.ALLOWED_ORIGIN?.split(',') || true : true,
-  methods: ['GET'],
-}));
-
+app.use(cors({ origin: true, methods: ['GET', 'POST'] }));
 app.use(express.json({ limit: '10kb' }));
 app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// Rate-limit the API to avoid spamming Spotify
+// Rate-limit
 const apiLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 60,             // 60 req/min per IP
+  windowMs: 60 * 1000,
+  max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'RATE_LIMITED', message: 'Too many requests, please try again later.' }
+  message: { error: 'RATE_LIMITED', message: 'Too many requests.' }
 });
 
 // --- Routes ---
 app.use('/api/canvas', apiLimiter, canvasRouter);
 
-// Quick health check
 app.get('/api/health', (_req, res) => {
-  res.set({
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff'
-  });
+  res.set({ 'Cache-Control': 'no-store' });
   res.status(200).json({
     status: 'ok',
-    service: 'spotify-canvas-api',
-    auth: {
-      oauth_refresh_token: Boolean(process.env.SPOTIFY_REFRESH_TOKEN),
-      sp_dc_cookie: Boolean(process.env.SPOTIFY_SP_DC),
-      https_proxy: Boolean(process.env.HTTPS_PROXY || process.env.HTTP_PROXY)
-    },
-    port: PORT,
-    uptime_sec: Math.floor(process.uptime()),
-    recommended_for_datacenters: 'Use SPOTIFY_CLIENT_ID + SPOTIFY_CLIENT_SECRET + SPOTIFY_REFRESH_TOKEN (accounts.spotify.com is NOT blocked).',
+    service: 'spotify-canvas-static',
+    mode: 'static-cdn-mapping',
+    database: 'server/data/canvas-database.json',
     timestamp: new Date().toISOString()
   });
 });
 
-// Serve static frontend (the Now Playing simulator)
+// Serve static frontend
 app.use(express.static(path.join(__dirname, '..', 'public')));
-
-// SPA fallback (sends the simulator for any unknown route)
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-// --- Global error handler ---
+// Global error handler
 app.use((err, _req, res, _next) => {
   console.error('[ERROR]', err);
   res.status(500).json({
@@ -97,21 +84,13 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-// Handle unhandled errors so Render sees us alive
-process.on('uncaughtException', (err) => console.error('[uncaughtException]', err));
-process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err));
-
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🟢 Spotify Canvas API running on port ${PORT}`);
-  console.log(`   URL:                 http://localhost:${PORT}`);
-  console.log(`   Canvas endpoint:     GET /api/canvas/:trackId`);
-  console.log(`   Health check:        GET /api/health`);
-  console.log(`   Frontend UI:         GET /`);
-  console.log(`   Auth methods:`, {
-    oauth_refresh_token: Boolean(process.env.SPOTIFY_REFRESH_TOKEN),
-    sp_dc_cookie: Boolean(process.env.SPOTIFY_SP_DC),
-    https_proxy: Boolean(process.env.HTTPS_PROXY || process.env.HTTP_PROXY)
-  }, '\n');
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🟢 Spotify Canvas API (static CDN mode) running on port ${PORT}`);
+  console.log(`   Health:        GET /api/health`);
+  console.log(`   Canvas:        GET /api/canvas/:trackId`);
+  console.log(`   Track catalog: GET /api/canvas/tracks`);
+  console.log(`   Frontend:      GET /`);
+  console.log(`   Mode:          static JSON database (no Spotify network calls)\n`);
 });
 
 export default app;
