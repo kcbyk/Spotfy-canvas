@@ -176,3 +176,8 @@ curl https://your-app.onrender.com/api/canvas/0VjIjW4GlUZAMYd2vXMi3b
 
 Canvas yoksa otomatik olarak YouTube arama katmanına düşer; sağ-üstteki pill
 buton ile her an video ↔ plak arasında geçiş yapabilirsin.
+
+## DB Güncelleme (Ekim 2026) — 3500 track
+- `node scripts/meta-fast.mjs` kworb.net günlük chart'larından ~18.000 track toplar, Spotify oEmbed ile kapak çeker ve canvas-database.json ile birleştirir.
+- Datacenter IP'lerden Spotify WAF (Fastly 54113) engelli olduğu için canvas fetch'i anonim token ile çalışmıyor; canvas URL'leri için ya SP_DC cookie gerekli ya da topluluk/PR ile canvas-database.json güncellenmeli.
+- Canvas olmayan şarkılarda YouTube fallback otomatik devreye girer (ön kapakta gradient placeholder + YouTube arama).
