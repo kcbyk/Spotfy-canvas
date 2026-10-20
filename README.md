@@ -106,13 +106,26 @@ npm install
 
 ### Çalıştırma
 ```bash
-# Varsayılan playlistler (Top 50 Global/TR, Viral 50, Today's Top Hits, Pop Rising)
+# TÜMÜ (Global + Türk playlistleri + 60+ Türk hitmaker sanatçı):
 npm run scrape
 
-# Spesifik playlist URL/ID'leri ile
-node scripts/bulk-canvas-scraper.mjs https://open.spotify.com/playlist/37i9dQZEVXbMDoHDwVN2tF
-node scripts/bulk-canvas-scraper.mjs 37i9dQZEVXbMDoHDwVN2tF 37i9dQZEVXbIVYVBNw9D5K
+# Sadece Türkçe playlistler ve sanatçılar:
+node scripts/bulk-canvas-scraper.mjs --turkish-only
+
+# Sadece global playlistler:
+node scripts/bulk-canvas-scraper.mjs --global-only
+
+# Kendi playlist'lerin:
+node scripts/bulk-canvas-scraper.mjs <playlist_url>...
 ```
+
+### Türk hitmaker arama listesi
+Wegh, Tarkan, Sezen Aksu, Ezhel, Ben Fero, Murda, Ceza, Sagopa Kajmer, Gazapizm, Reynmen,
+Lvbel C5, UZI, Heijan, Batuflex, Ati242, Sefo, Semicenk, Zeynep Bastık, Kurtuluş Kuş,
+Burak Bulut, Cakal, Era7capone, Şehinşah, Duman, Mor ve Ötesi, maNga, Gülşen, Hande Yener,
+Hadise, Murat Boz, Tepki, Canbay & Wolker, Organize, ve daha fazlası (toplam 60+ sanatçı).
+
+Her sanatçı için Spotify Search API ile otomatik ID çözülür, sonra top-track'leri çekilir.
 
 ### Özellikler
 - Zaten veritabanında olanları atlar (duplication koruması)
